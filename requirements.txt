@@ -1,5 +1,5 @@
-numpy
 pandas
+numpy
 sklearn
 openpyxl
 matplotlib
