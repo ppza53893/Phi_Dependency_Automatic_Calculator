@@ -241,5 +241,7 @@ if __name__=='__main__':
     main()
 
     print("Done!")
-    OPEN_PATH = DEST_PATH.replace('/', '\\')
-    _ = subprocess.run(f"explorer {OPEN_PATH}", shell=True)
+    if os.name == 'nt':
+        OPEN_PATH = DEST_PATH.replace('/', '\\')
+        _ = subprocess.run(f"explorer {OPEN_PATH}", shell=True)
+        _ = subprocess.run("pause", shell=True)
