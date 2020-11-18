@@ -7,6 +7,11 @@ import glob
 import os
 import sys
 import subprocess
+
+# pylint: disable=subprocess-run-check
+_ = subprocess.run("title polarization automatic tool", shell=True)
+
+# pylint: disable=wrong-import-position
 from tkinter import Tk
 from tkinter.filedialog import askdirectory
 
@@ -16,10 +21,11 @@ import pandas as pd
 import tqdm
 from scipy import optimize as opt
 from sklearn import linear_model
-
+# pylint: enable=wrong-import-position
 
 INPUT_PATH = None
 DEST_PATH = None
+ANGLE_MUL = None
 
 
 def browse() -> str:
@@ -93,16 +99,18 @@ def polar_formura(x, a, b, c):
     偏向角特性
     卒論3章を参照
     """
-    return a * np.sin(np.pi*(x/90. + b/180.)) + c
+    return a * np.sin(ANGLE_MUL*np.pi*(x/90. + b/180.)) + c
 
 
 def write_polarization_graph(data):
     """
     偏向角-開放端電圧、偏向角-短絡電流のグラフを書き出す
     """
+    global ANGLE_MUL # pylint: disable=global-statement
 
     # 分割
     angles, voltages, currents = data
+    ANGLE_MUL = 1 if angles[-1] > 90 else 2
 
     # カーブフィッティング
     # polar_formuraの変数(a, b, c)を求める
@@ -110,7 +118,7 @@ def write_polarization_graph(data):
     sa_params = opt.curve_fit(polar_formura, angles, currents)[0][0:3]
 
     # 曲線を書く用のx軸データ
-    polar_angles = np.arange(angles[0], angles[-1], step=5)
+    polar_angles = np.arange(angles[0], angles[-1], step=2)
 
     # 曲線用のデータを作成
     pred_y = [[],[]]
@@ -135,6 +143,7 @@ def write_polarization_graph(data):
         graph_l.set_title('Voc-φ')
         graph_l.set_xlabel('Angle of light polarization φ (deg)')
         graph_l.set_ylabel('Open circuit voltage (V)')
+        graph_l.set_xlim([angles[0], angles[-1]])
 
         # ngraph用のデータを書き出す
         write_data(voltages, os.path.join(DEST_PATH, 'ngraph_Voc.txt'))
@@ -148,6 +157,7 @@ def write_polarization_graph(data):
         graph_r.set_title('Isc-φ')
         graph_r.set_xlabel('Angle of light polarization φ (deg)')
         graph_r.set_ylabel('Short circuit current (pA)')
+        graph_r.set_xlim([angles[0], angles[-1]])
 
         write_data(currents, os.path.join(DEST_PATH, 'ngraph_Isc.txt'))
 
@@ -228,7 +238,7 @@ def main():
                 f.readlines()[13:],
                 os.path.split(_nums[0])[-1])
         data += [[_nums[1], polar_angle, v_oc, i_sc, cond]]
-        polarizations[0] += [_nums[1]]
+        polarizations[0] += [polar_angle]
         polarizations[1] += [v_oc]
         polarizations[2] += [i_sc]
         polar_angle += 11.25
