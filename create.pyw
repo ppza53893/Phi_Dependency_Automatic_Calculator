@@ -4,12 +4,15 @@
 
 import datetime
 import glob
+import msvcrt
 import os
 import sys
 import subprocess
-
-# pylint: disable=subprocess-run-check
-_ = subprocess.run("title polarization automatic tool", shell=True)
+_ = subprocess.run("title Polarization Automatic Tool", shell=True)
+print("Polarization Automatic Tool ver 1.1 (2020/11/19)")
+print("・使用方法は「How to use.txt」を見てください。")
+print("・初回起動は少しロードが遅くなります。")
+print("・ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。\n")
 
 # pylint: disable=wrong-import-position
 from tkinter import Tk
@@ -23,11 +26,19 @@ from scipy import optimize as opt
 from sklearn import linear_model
 # pylint: enable=wrong-import-position
 
+
 INPUT_PATH = None
 DEST_PATH = None
-ANGLE_MUL = None
+DAT_READ_START = 13
 
 
+##################################### 変更場所 #####################################
+ANGLE_ADD = 11.25 # 回転角のステップを変える場合はここを変える
+ANGLE_MUL = 2 # 測定値の周期に合わせて調整(偏向角は2にする、結晶回転方向は1にする)
+###################################################################################
+
+
+# pylint: disable=invalid-name
 def browse() -> str:
     """
     フォルダの参照
@@ -37,8 +48,10 @@ def browse() -> str:
     if INPUT_PATH is None:
         root = Tk()
         root.withdraw()
-        current_directory = os.path.abspath(os.path.dirname(__file__))
-        INPUT_PATH = askdirectory(initialdir=current_directory)
+        #INPUT_PATH = askdirectory(
+        #    initialdir="C:\\Users\\Owner\\Documents\\DATA")
+        INPUT_PATH = askdirectory(
+            initialdir=os.path.abspath(os.path.dirname(__file__)))
         if INPUT_PATH == "":
             print("キャンセルされました。")
             sys.exit(1)
@@ -56,23 +69,61 @@ def get_curtime() -> str:
     return time_ymd
 
 
-# pylint: disable=invalid-name
-def write_linear_graph(lines, fname):
+def calc_linears(x, y) -> list:
+    """
+    線形回帰
+    """
+
+    model = linear_model.LinearRegression()
+    x = np.array(x, dtype=np.float32).reshape(-1,1)
+    y = np.array(y, dtype=np.float32).reshape(-1,1)
+    model.fit(x, y)
+
+    return model, model.score(x, y)
+
+
+def dat_separate(lines):
+    """
+    DATファイルから電圧と電流のデータを取得
+    """
+    sep_lines = [x.split(',') for x in lines]
+    v_s = [float(x[0]) for x in sep_lines]
+    i_s = [float(x[1]) for x in sep_lines]
+    return [v_s, i_s]
+
+
+def get_best_model(data):
+    """
+    決定係数がもっともよいモデルを取得し、予測値を取得
+    """
+
+    count = len(data[0])>>1
+    models = []
+    scores = np.zeros((count, ), dtype=np.float32)
+    for i in range(count):
+        model = linear_model.LinearRegression()
+        x = np.array(data[0][i:], dtype=np.float32).reshape(-1,1)
+        y = np.array(data[1][i:], dtype=np.float32).reshape(-1,1)
+        model.fit(x, y)
+
+        models.append(model)
+        scores[i] = model.score(x,y)
+
+    best_index = np.argmax(scores)
+    model = models[np.argmax(scores)]
+    x = np.array(data[0], dtype=np.float32).reshape(-1,1)
+    y = model.predict(x)
+
+    return model, x, y
+
+
+def write_linear_graph(data, fname):
     """
     線形回帰から傾きと切片を求め、グラフを出力
     """
     # 線形モデル
-    model = linear_model.LinearRegression()
 
-    voltage_s = []
-    current_s = []
-    for _param in lines:
-        voltage, current = _param.split(',')
-        voltage_s.append(int(voltage))
-        current_s.append(float(current))
-    voltage_s = np.array(voltage_s).reshape(-1,1)
-    current_s = np.array(current_s, dtype=np.float32).reshape(-1,1)
-    model.fit(voltage_s, current_s)
+    model, pred_x, pred_y = get_best_model(data)
 
     coef, intercept = model.coef_[0][0], model.intercept_[0]
 
@@ -86,20 +137,26 @@ def write_linear_graph(lines, fname):
     plt.title(f"Slope:{cond} pS, Intercept:{i_sc} pA")
     plt.xlabel('Voltage (V)')
     plt.ylabel('Current (A)')
-    plt.plot(voltage_s, current_s, marker='o', linestyle='None', color='black')
-    plt.plot(voltage_s, model.predict(voltage_s), linestyle='solid', color='red')
+    plt.plot(data[0], data[1], marker='o', linestyle='None', color='black')
+    plt.plot(pred_x, pred_y, linestyle='solid', color='red')
     plt.savefig(liner_image_path)
     plt.close()
 
     return v_oc, i_sc, cond
 
 
-def polar_formura(x, a, b, c):
+#___################################# 変更場所 #####################################
+def formula(x, a, b, c):
+    # ↑ 理論式の変数の個数に合わせて変数を追加する
+    ###############################################################################
     """
-    偏向角特性
-    卒論3章を参照
+    理論式
+    林本さん卒論3章を参照
     """
+    ##################################### 変更場所 #####################################
+    # 理論式を変える場合はここを変える
     return a * np.sin(ANGLE_MUL*np.pi*(x/90. + b/180.)) + c
+    ###################################################################################
 
 
 def write_polarization_graph(data):
@@ -110,12 +167,12 @@ def write_polarization_graph(data):
 
     # 分割
     angles, voltages, currents = data
-    ANGLE_MUL = 1 if angles[-1] > 90 else 2
+    #ANGLE_MUL = 1 if angles[-1] > 180 else 2
 
     # カーブフィッティング
-    # polar_formuraの変数(a, b, c)を求める
-    sv_params = opt.curve_fit(polar_formura, angles, voltages)[0][0:3]
-    sa_params = opt.curve_fit(polar_formura, angles, currents)[0][0:3]
+    # formulaの変数を求める
+    sv_params = opt.curve_fit(formula, angles, voltages)[0]
+    sa_params = opt.curve_fit(formula, angles, currents)[0]
 
     # 曲線を書く用のx軸データ
     polar_angles = np.arange(angles[0], angles[-1], step=2)
@@ -123,10 +180,10 @@ def write_polarization_graph(data):
     # 曲線用のデータを作成
     pred_y = [[],[]]
     for angle in polar_angles:
-        pred_y[0] += [polar_formura(angle, *sv_params)]
-        pred_y[1] += [polar_formura(angle, *sa_params)]
+        pred_y[0] += [formula(angle, *sv_params)]
+        pred_y[1] += [formula(angle, *sa_params)]
 
-    ##################################### グラフ書き出し #####################################
+    # グラフ書き出し
     fig, (graph_l, graph_r) = plt.subplots(ncols=2, figsize=(10,4))
 
     def write_data(y_data, txtpath):
@@ -140,8 +197,11 @@ def write_polarization_graph(data):
         """
         graph_l.plot(angles, voltages, linestyle='None', marker='o', color='green')
         graph_l.plot(polar_angles, pred_y[0])
+        ##################################### 変更場所 #####################################
+        # 特性グラフの軸の名前
         graph_l.set_title('Voc-φ')
         graph_l.set_xlabel('Angle of light polarization φ (deg)')
+        ###################################################################################
         graph_l.set_ylabel('Open circuit voltage (V)')
         graph_l.set_xlim([angles[0], angles[-1]])
 
@@ -154,8 +214,11 @@ def write_polarization_graph(data):
         """
         graph_r.plot(angles, currents, linestyle='None', marker='o', color='blue')
         graph_r.plot(polar_angles, pred_y[1])
+        ##################################### 変更場所 #####################################
+        # 特性グラフの軸の名前
         graph_r.set_title('Isc-φ')
         graph_r.set_xlabel('Angle of light polarization φ (deg)')
+        ###################################################################################
         graph_r.set_ylabel('Short circuit current (pA)')
         graph_r.set_xlim([angles[0], angles[-1]])
 
@@ -165,7 +228,6 @@ def write_polarization_graph(data):
     plot_current()
     fig.savefig(os.path.join(DEST_PATH, 'polarization_Voc_Isc.png'))
     plt.close()
-    #########################################################################################
 
 
 def write_to_excel(data):
@@ -177,6 +239,8 @@ def write_to_excel(data):
     # pylint: disable=unsubscriptable-object
     output_file = os.path.join(DEST_PATH, 'result.xlsx')
     with pd.ExcelWriter(output_file) as writer:
+        ##################################### 変更場所 #####################################
+        # excelの内容
         columns = [
             'Polarizing plate angle (deg)',
             'Polarization angle (deg)',
@@ -184,13 +248,14 @@ def write_to_excel(data):
             'Current (pA)',
             'Conductance (pS)'
             ]
+        ###################################################################################
         df_data = pd.DataFrame(data, columns=columns)
         df_data.to_excel(writer, sheet_name='result', engine='openpyxl')
 
         # エクセルのコラム幅を変える
         worksheet = writer.book['result']
         for i, cell in enumerate(['B', 'C', 'D', 'E', 'F']):
-            worksheet.column_dimensions[cell].width = len(columns[i])
+            worksheet.column_dimensions[cell].width = len(columns[i])+1
 
 
 def main():
@@ -200,11 +265,11 @@ def main():
     global DEST_PATH # pylint: disable=global-statement
 
     DEST_PATH = os.path.join(browse(), get_curtime()+'_result')
+    
     print(browse())
     os.makedirs(DEST_PATH, exist_ok=True)
-    print("プログレスバーが表示されないときは何かのキーを押してください。")
 
-    paths = [p for p in glob.glob(browse()+'/**', recursive=True)
+    paths = [p for p in glob.glob(browse()+'/*')
         if os.path.splitext(p)[1].lower()=='.dat']
 
     error_log = []
@@ -225,7 +290,8 @@ def main():
         with open(output_file, 'w', encoding='utf-8') as f:
             f.writelines(error_log)
             if len(nums) == 0:
-                sys.exit(1)
+                print("エラー:有効なファイルがありませんでした。\nほかのデータを参照しますか? (y/n):", end='')
+                return
 
     nums = sorted(nums.items(), key=lambda x: x[1])
 
@@ -235,23 +301,54 @@ def main():
     for _nums in tqdm.tqdm(nums):
         with open(_nums[0], 'r') as f:
             v_oc, i_sc, cond = write_linear_graph(
-                f.readlines()[13:],
+                dat_separate(f.readlines()[DAT_READ_START:]),
                 os.path.split(_nums[0])[-1])
+
         data += [[_nums[1], polar_angle, v_oc, i_sc, cond]]
         polarizations[0] += [polar_angle]
         polarizations[1] += [v_oc]
         polarizations[2] += [i_sc]
-        polar_angle += 11.25
+
+        polar_angle += ANGLE_ADD
 
     write_polarization_graph(polarizations)
     write_to_excel(data)
+    print("完了!\n続行しますか? (y/n):", end='')
+
+    # ファイルを開く
+    if os.name == 'nt':
+        DEST_PATH = DEST_PATH.replace('/', '\\')
+        _ = subprocess.run(f"explorer {DEST_PATH}", shell=True)
+
+
+def reset():
+    """
+    グローバル変数のリセット
+    """
+    global INPUT_PATH
+    global DEST_PATH
+
+    INPUT_PATH = None
+    DEST_PATH = None
+
+    print()
 
 
 if __name__=='__main__':
     main()
 
-    print("Done!")
-    if os.name == 'nt':
-        OPEN_PATH = DEST_PATH.replace('/', '\\')
-        _ = subprocess.run(f"explorer {OPEN_PATH}", shell=True)
-        _ = subprocess.run("pause", shell=True)
+    while True:
+        key = ord(msvcrt.getch())
+        sys.stdout.write(f"{chr(key)}")
+        if key==3 or chr(key).lower()=='n':
+            break
+        elif chr(key).lower()=='y':
+            reset()
+            main()
+        else:
+            sys.stdout.write("\n無効なキーです。「y」か「n」を押してください:")
+            continue
+    print()
+
+            
+        
