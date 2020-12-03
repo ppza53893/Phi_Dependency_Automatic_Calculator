@@ -9,7 +9,7 @@ import os
 import sys
 import subprocess
 _ = subprocess.run("title Polarization Automatic Tool", shell=True)
-print("Polarization Automatic Tool ver 1.1 (2020/11/19)")
+print("Polarization Automatic Tool ver 1.1 (2020/12/03)")
 print("・使用方法は「How to use.txt」を見てください。")
 print("・初回起動は少しロードが遅くなります。")
 print("・ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。\n")
@@ -33,8 +33,7 @@ DAT_READ_START = 13
 
 
 ##################################### 変更場所 #####################################
-ANGLE_ADD = 11.25 # 回転角のステップを変える場合はここを変える
-ANGLE_MUL = 2 # 測定値の周期に合わせて調整(偏向角は2にする、結晶回転方向は1にする)
+ANGLE_ADD = 22.5 # 回転角のステップを変える場合はここを変える
 ###################################################################################
 
 
@@ -109,7 +108,6 @@ def get_best_model(data):
         models.append(model)
         scores[i] = model.score(x,y)
 
-    best_index = np.argmax(scores)
     model = models[np.argmax(scores)]
     x = np.array(data[0], dtype=np.float32).reshape(-1,1)
     y = model.predict(x)
@@ -155,7 +153,7 @@ def formula(x, a, b, c):
     """
     ##################################### 変更場所 #####################################
     # 理論式を変える場合はここを変える
-    return a * np.sin(ANGLE_MUL*np.pi*(x/90. + b/180.)) + c
+    return a * np.sin(np.pi*(x/90. + b/180.)) + c
     ###################################################################################
 
 
@@ -163,11 +161,9 @@ def write_polarization_graph(data):
     """
     偏向角-開放端電圧、偏向角-短絡電流のグラフを書き出す
     """
-    global ANGLE_MUL # pylint: disable=global-statement
 
     # 分割
     angles, voltages, currents = data
-    #ANGLE_MUL = 1 if angles[-1] > 180 else 2
 
     # カーブフィッティング
     # formulaの変数を求める
@@ -196,7 +192,8 @@ def write_polarization_graph(data):
         偏向角-開放端電圧特性
         """
         graph_l.plot(angles, voltages, linestyle='None', marker='o', color='green')
-        graph_l.plot(polar_angles, pred_y[0])
+        graph_l.plot(polar_angles, pred_y[0],
+            label=f'Voc={round(sv_params[0], 1)}sin(2φ{round(sv_params[1]*3.1415926535/180,1):+}){round(sv_params[2],1):+}')
         ##################################### 変更場所 #####################################
         # 特性グラフの軸の名前
         graph_l.set_title('Voc-φ')
@@ -204,6 +201,7 @@ def write_polarization_graph(data):
         ###################################################################################
         graph_l.set_ylabel('Open circuit voltage (V)')
         graph_l.set_xlim([angles[0], angles[-1]])
+        graph_l.legend(bbox_to_anchor=(1, 1), loc='upper right', borderaxespad=0)
 
         # ngraph用のデータを書き出す
         write_data(voltages, os.path.join(DEST_PATH, 'ngraph_Voc.txt'))
@@ -213,7 +211,8 @@ def write_polarization_graph(data):
         偏向角-短絡電流特性
         """
         graph_r.plot(angles, currents, linestyle='None', marker='o', color='blue')
-        graph_r.plot(polar_angles, pred_y[1])
+        graph_r.plot(polar_angles, pred_y[1],
+            label=f"Isc={round(sa_params[0], 1)}sin(2φ{round(sa_params[1]*3.1415926535/180,1):+}){round(sa_params[2],1):+}")
         ##################################### 変更場所 #####################################
         # 特性グラフの軸の名前
         graph_r.set_title('Isc-φ')
@@ -221,6 +220,7 @@ def write_polarization_graph(data):
         ###################################################################################
         graph_r.set_ylabel('Short circuit current (pA)')
         graph_r.set_xlim([angles[0], angles[-1]])
+        graph_r.legend(bbox_to_anchor=(1, 1), loc='upper right', borderaxespad=0)
 
         write_data(currents, os.path.join(DEST_PATH, 'ngraph_Isc.txt'))
 
@@ -269,8 +269,14 @@ def main():
     print(browse())
     os.makedirs(DEST_PATH, exist_ok=True)
 
-    paths = [p for p in glob.glob(browse()+'/*')
-        if os.path.splitext(p)[1].lower()=='.dat']
+    paths = []
+    for _path in glob.glob(browse()+'/*'):
+        try:
+            num = float(os.path.split(_path)[1])
+        except ValueError:
+            if os.path.splitext(_path)[1].lower() !='.dat':
+                continue
+        paths.append(_path)
 
     error_log = []
     nums = {}
@@ -325,8 +331,10 @@ def reset():
     """
     グローバル変数のリセット
     """
+    # pylint: disable=global-statement
     global INPUT_PATH
     global DEST_PATH
+    # pylint: enable=global-statement
 
     INPUT_PATH = None
     DEST_PATH = None
