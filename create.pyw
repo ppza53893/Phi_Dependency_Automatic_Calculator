@@ -9,7 +9,7 @@ import os
 import sys
 import subprocess
 _ = subprocess.run("title Polarization Automatic Tool", shell=True)
-print("Polarization Automatic Tool ver 1.1 (2020/12/03)")
+print("Polarization Automatic Tool ver 1.3 (2020/12/03)")
 print("・使用方法は「How to use.txt」を見てください。")
 print("・初回起動は少しロードが遅くなります。")
 print("・ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。\n")
