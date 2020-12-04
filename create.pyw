@@ -1,7 +1,7 @@
 """
 測定データをまとめる
 """
-
+# pylint: disable=W1510
 import datetime
 import glob
 import msvcrt
@@ -9,7 +9,7 @@ import os
 import sys
 import subprocess
 _ = subprocess.run("title Polarization Automatic Tool", shell=True)
-print("Polarization Automatic Tool ver 1.3 (2020/12/03)")
+print("Polarization Automatic Tool ver 1.4 (2020/12/04)")
 print("・使用方法は「How to use.txt」を見てください。")
 print("・初回起動は少しロードが遅くなります。")
 print("・ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。\n")
@@ -27,6 +27,7 @@ from sklearn import linear_model
 # pylint: enable=wrong-import-position
 
 
+DIR_SELECTED = False
 INPUT_PATH = None
 DEST_PATH = None
 DAT_READ_START = 13
@@ -43,29 +44,50 @@ def browse() -> str:
     フォルダの参照
     """
     global INPUT_PATH # pylint: disable=global-statement
+    global DIR_SELECTED # pylint: disable=global-statement
 
-    if INPUT_PATH is None:
+    if not DIR_SELECTED:
+        abs_path = os.path.abspath(os.path.dirname(__file__))
+        find_path = os.path.join(abs_path, '.record')
+        if os.path.exists(find_path):
+            with open(find_path, 'r') as f:
+                ask_dir = f.readline().rstrip()
+                if not os.path.exists(ask_dir):
+                    ask_dir = abs_path
+        else:
+            ask_dir = abs_path
         root = Tk()
         root.withdraw()
-        #INPUT_PATH = askdirectory(
-        #    initialdir="C:\\Users\\Owner\\Documents\\DATA")
-        INPUT_PATH = askdirectory(
-            initialdir=os.path.abspath(os.path.dirname(__file__)))
+        INPUT_PATH = askdirectory(initialdir=ask_dir)
         if INPUT_PATH == "":
             print("キャンセルされました。")
             sys.exit(1)
+        DIR_SELECTED = True
 
     return INPUT_PATH
 
 
-def get_curtime() -> str:
+def get_curtime(for_folder=True) -> str:
     """
     現在時刻を入手
     """
     times = datetime.datetime.now()
-    time_ymd = times.strftime('%y%m%d-%H%M')
+    time_ymd = times.strftime('%y%m%d-%H%M') \
+        if for_folder else times.strftime('%Y/%m/%d %H:%M')
 
     return time_ymd
+
+
+def read_path():
+    """
+    読み込んだフォルダパスを書き込み(次回以降の参照先にするため)
+    """
+    record_file = '.record'
+    file_path = os.path.join(
+        os.path.abspath(os.path.dirname(__file__)), record_file)
+    with open(file_path, 'w') as f:
+        f.write(INPUT_PATH + '\n')
+        f.write('Last used:'+ get_curtime(False))
 
 
 def calc_linears(x, y) -> list:
@@ -148,7 +170,7 @@ def formula(x, a, b, c):
     # ↑ 理論式の変数の個数に合わせて変数を追加する
     ###############################################################################
     """
-    理論式
+    理論式(deg)
     林本さん卒論3章を参照
     """
     ##################################### 変更場所 #####################################
@@ -193,7 +215,8 @@ def write_polarization_graph(data):
         """
         graph_l.plot(angles, voltages, linestyle='None', marker='o', color='green')
         graph_l.plot(polar_angles, pred_y[0],
-            label=f'Voc={round(sv_params[0], 1)}sin(2φ{round(sv_params[1]*3.1415926535/180,1):+}){round(sv_params[2],1):+}')
+            label=f'Voc={sv_params[0]:.1f}'\
+                f'sin(2φ{sv_params[1]*3.1415926535/180:+.1f}){sv_params[2]:+.1f}')
         ##################################### 変更場所 #####################################
         # 特性グラフの軸の名前
         graph_l.set_title('Voc-φ')
@@ -212,7 +235,8 @@ def write_polarization_graph(data):
         """
         graph_r.plot(angles, currents, linestyle='None', marker='o', color='blue')
         graph_r.plot(polar_angles, pred_y[1],
-            label=f"Isc={round(sa_params[0], 1)}sin(2φ{round(sa_params[1]*3.1415926535/180,1):+}){round(sa_params[2],1):+}")
+            label=f'Isc={sa_params[0]:.1f}'\
+                f'sin(2φ{sa_params[1]*3.1415926535/180:+.1f}){sa_params[2]:+.1f}')
         ##################################### 変更場所 #####################################
         # 特性グラフの軸の名前
         graph_r.set_title('Isc-φ')
@@ -265,28 +289,26 @@ def main():
     global DEST_PATH # pylint: disable=global-statement
 
     DEST_PATH = os.path.join(browse(), get_curtime()+'_result')
-    
+
     print(browse())
     os.makedirs(DEST_PATH, exist_ok=True)
 
-    paths = []
+    error_log = []
+    nums = {}
     for _path in glob.glob(browse()+'/*'):
+        if not os.path.isfile(_path):
+            continue
         try:
             num = float(os.path.split(_path)[1])
         except ValueError:
-            if os.path.splitext(_path)[1].lower() !='.dat':
+            try:
+                num = float(
+                    os.path.splitext(os.path.split(_path)[1])[0])
+            except ValueError as e:
+                error_log.append(str(e) + '\n')
+                error_log.append(f"Invalid file name : {os.path.abspath(_path)}\n")
                 continue
-        paths.append(_path)
 
-    error_log = []
-    nums = {}
-    for _path in paths:
-        try:
-            num = float(
-                os.path.splitext(os.path.split(_path)[1])[0])
-        except ValueError:
-            error_log.append(f"Invalid file name : {os.path.abspath(_path)}\n")
-            continue
         nums[_path] = num
 
     if len(nums) == 0:
@@ -310,15 +332,16 @@ def main():
                 dat_separate(f.readlines()[DAT_READ_START:]),
                 os.path.split(_nums[0])[-1])
 
-        data += [[_nums[1], polar_angle, v_oc, i_sc, cond]]
+        data += [[_nums[1], polar_angle, v_oc, -i_sc, cond]]
         polarizations[0] += [polar_angle]
         polarizations[1] += [v_oc]
-        polarizations[2] += [i_sc]
+        polarizations[2] += [-i_sc]
 
         polar_angle += ANGLE_ADD
 
     write_polarization_graph(polarizations)
     write_to_excel(data)
+    read_path()
     print("完了!\n続行しますか? (y/n):", end='')
 
     # ファイルを開く
@@ -332,14 +355,12 @@ def reset():
     グローバル変数のリセット
     """
     # pylint: disable=global-statement
-    global INPUT_PATH
+    global DIR_SELECTED
     global DEST_PATH
     # pylint: enable=global-statement
 
-    INPUT_PATH = None
+    DIR_SELECTED = False
     DEST_PATH = None
-
-    print()
 
 
 if __name__=='__main__':
@@ -349,14 +370,12 @@ if __name__=='__main__':
         key = ord(msvcrt.getch())
         sys.stdout.write(f"{chr(key)}")
         if key==3 or chr(key).lower()=='n':
-            break
+            print()
+            sys.exit(0)
         elif chr(key).lower()=='y':
+            sys.stdout.write("\n")
             reset()
             main()
         else:
             sys.stdout.write("\n無効なキーです。「y」か「n」を押してください:")
-            continue
-    print()
 
-            
-        
