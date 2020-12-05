@@ -9,7 +9,9 @@ import os
 import sys
 import subprocess
 _ = subprocess.run("title Polarization Automatic Tool", shell=True)
-print("Polarization Automatic Tool ver 1.4 (2020/12/04)")
+if not __debug__:
+    print("デバッグモード ON")
+print("Polarization Automatic Tool ver 1.5 (2020/12/05)")
 print("・使用方法は「How to use.txt」を見てください。")
 print("・初回起動は少しロードが遅くなります。")
 print("・ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。\n")
@@ -24,6 +26,9 @@ import pandas as pd
 import tqdm
 from scipy import optimize as opt
 from sklearn import linear_model
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from ngraph import NgraphWriter
 # pylint: enable=wrong-import-position
 
 
@@ -179,6 +184,74 @@ def formula(x, a, b, c):
     ###################################################################################
 
 
+def calc_y_scale(y):
+    """
+    y軸のスケール幅を設定する
+    参考 : https://imagingsolution.net/program/autocalcgraphstep/
+    """
+    ymax, npow = f"{max(abs(max(y)), abs(min(y))):e}".split("e")
+    ymax = float(ymax)
+    npow = abs(int(npow))
+
+    if ymax < 1.5:
+        step = 0.5*10**npow
+    elif ymax < 3.5:
+        step = 1.0*10**npow
+    elif ymax <= 5.0:
+        step = 2.0*10**npow
+    else:
+        step = 5.0*10**npow
+
+    def rangeset(value):
+        n = abs(value)
+        ret = step
+        i = 2
+        while n > ret:
+            ret = step*i
+            i += 1
+        return ret if value >=0 else -ret
+
+    y_min = rangeset(min(y))
+    y_max = rangeset(max(y))
+    y_min = max(abs(y_max), abs(y_min)) * abs(y_min) / y_min
+    y_max = max(abs(y_max), abs(y_min)) * abs(y_max) / y_max
+    if not __debug__:
+        print("(min, max, step) = ", y_min, y_max, step)
+    return y_min, y_max, step
+
+
+def write_ngp_data(angles, y_data, s_params, txtpath, mode):
+    """
+    Ngraphデータを生成
+    """
+    with open(txtpath, 'w') as f:
+        f.writelines([
+            f'{angles[i]}\t{y_data[i]}\n' for i in range(len(angles))])
+
+    y_scales = calc_y_scale(y_data)
+    directory = os.path.join('.', os.path.split(txtpath)[1]).replace("\\", '/')
+
+    ngp = NgraphWriter(mode)
+    ngp.write([
+        [0,'axis name:fX1', 'min', angles[0]],
+        [0,'axis name:fX1', 'max', angles[-1]],
+        [0,'axis name:fX1', 'inc', ANGLE_ADD*2],
+        [1,'axis name:fY1', 'min', y_scales[0]],
+        [1,'axis name:fY1', 'max', y_scales[1]],
+        [1,'axis name:fY1', 'inc', y_scales[2]],
+        [5, 'file', 'file', f"'{directory}'"],
+        ##################################### 変更場所 #####################################
+        # 理論式を変える場合はここも変える
+        # 書き方はngpファイル参照(fit::equation)
+        [6,'fit','equation',
+            f"'{s_params[0]}*"\
+                f"SIN(PI*(X/90+{s_params[1]}/180))+{s_params[2]}'"],
+        ###################################################################################
+        [7, 'file', 'file', f"'{directory}'"],
+        ])
+    ngp.out(txtpath.replace('.txt', '.ngp'))
+
+
 def write_polarization_graph(data):
     """
     偏向角-開放端電圧、偏向角-短絡電流のグラフを書き出す
@@ -204,11 +277,6 @@ def write_polarization_graph(data):
     # グラフ書き出し
     fig, (graph_l, graph_r) = plt.subplots(ncols=2, figsize=(10,4))
 
-    def write_data(y_data, txtpath):
-        with open(txtpath, 'w') as f:
-            f.writelines([
-                f'{angles[i]}\t{y_data[i]}\n' for i in range(len(angles))])
-
     def plot_voltage():
         """
         偏向角-開放端電圧特性
@@ -217,6 +285,8 @@ def write_polarization_graph(data):
         graph_l.plot(polar_angles, pred_y[0],
             label=f'Voc={sv_params[0]:.1f}'\
                 f'sin(2φ{sv_params[1]*3.1415926535/180:+.1f}){sv_params[2]:+.1f}')
+        if not __debug__:
+            print('voc:',sv_params)
         ##################################### 変更場所 #####################################
         # 特性グラフの軸の名前
         graph_l.set_title('Voc-φ')
@@ -227,7 +297,12 @@ def write_polarization_graph(data):
         graph_l.legend(bbox_to_anchor=(1, 1), loc='upper right', borderaxespad=0)
 
         # ngraph用のデータを書き出す
-        write_data(voltages, os.path.join(DEST_PATH, 'ngraph_Voc.txt'))
+        write_ngp_data(
+            angles,
+            voltages,
+            sv_params,
+            os.path.join(DEST_PATH, 'Voc_phi.txt'),
+            'v')
 
     def plot_current():
         """
@@ -237,6 +312,8 @@ def write_polarization_graph(data):
         graph_r.plot(polar_angles, pred_y[1],
             label=f'Isc={sa_params[0]:.1f}'\
                 f'sin(2φ{sa_params[1]*3.1415926535/180:+.1f}){sa_params[2]:+.1f}')
+        if not __debug__:
+            print('isc:',sa_params)
         ##################################### 変更場所 #####################################
         # 特性グラフの軸の名前
         graph_r.set_title('Isc-φ')
@@ -246,7 +323,12 @@ def write_polarization_graph(data):
         graph_r.set_xlim([angles[0], angles[-1]])
         graph_r.legend(bbox_to_anchor=(1, 1), loc='upper right', borderaxespad=0)
 
-        write_data(currents, os.path.join(DEST_PATH, 'ngraph_Isc.txt'))
+        write_ngp_data(
+            angles,
+            currents,
+            sa_params,
+            os.path.join(DEST_PATH, 'Isc_phi.txt'),
+            'i')
 
     plot_voltage()
     plot_current()
@@ -301,6 +383,8 @@ def main():
         try:
             num = float(os.path.split(_path)[1])
         except ValueError:
+            if os.path.splitext(os.path.split(_path)[1])[1].lower() != '.dat':
+                continue
             try:
                 num = float(
                     os.path.splitext(os.path.split(_path)[1])[0])
@@ -342,12 +426,15 @@ def main():
     write_polarization_graph(polarizations)
     write_to_excel(data)
     read_path()
+    if not __debug__:
+        sys.exit(0)
     print("完了!\n続行しますか? (y/n):", end='')
 
     # ファイルを開く
     if os.name == 'nt':
         DEST_PATH = DEST_PATH.replace('/', '\\')
-        _ = subprocess.run(f"explorer {DEST_PATH}", shell=True)
+        if __debug__:
+            _ = subprocess.run(f"explorer {DEST_PATH}", shell=True)
 
 
 def reset():
@@ -378,4 +465,3 @@ if __name__=='__main__':
             main()
         else:
             sys.stdout.write("\n無効なキーです。「y」か「n」を押してください:")
-

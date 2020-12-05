@@ -1,2 +1,4 @@
 .vscode/
 .record
+debug/
+__pycache__
