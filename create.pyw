@@ -184,12 +184,17 @@ def formula(x, a, b, c):
     ###################################################################################
 
 
-def calc_y_scale(y):
+def calc_y_scale(y, yp):
     """
     y軸のスケール幅を設定する
     参考 : https://imagingsolution.net/program/autocalcgraphstep/
     """
-    ymax, npow = f"{max(abs(max(y)), abs(min(y))):e}".split("e")
+    _y = max(
+            abs(max(y)),
+            abs(min(y)),
+            abs(max(yp)),
+            abs(min(yp)))
+    ymax, npow = f"{_y:e}".split("e")
     ymax = float(ymax)
     npow = abs(int(npow))
 
@@ -211,8 +216,8 @@ def calc_y_scale(y):
             i += 1
         return ret if value >=0 else -ret
 
-    y_min = rangeset(min(y))
-    y_max = rangeset(max(y))
+    y_min = rangeset(min(min(y), min(yp)))
+    y_max = rangeset(max(max(yp), max(yp)))
     y_min = max(abs(y_max), abs(y_min)) * abs(y_min) / y_min
     y_max = max(abs(y_max), abs(y_min)) * abs(y_max) / y_max
     if not __debug__:
@@ -220,7 +225,7 @@ def calc_y_scale(y):
     return y_min, y_max, step
 
 
-def write_ngp_data(angles, y_data, s_params, txtpath, mode):
+def write_ngp_data(angles, y_data, y_pred, s_params, txtpath, mode):
     """
     Ngraphデータを生成
     """
@@ -228,7 +233,7 @@ def write_ngp_data(angles, y_data, s_params, txtpath, mode):
         f.writelines([
             f'{angles[i]}\t{y_data[i]}\n' for i in range(len(angles))])
 
-    y_scales = calc_y_scale(y_data)
+    y_scales = calc_y_scale(y_data, y_pred)
     directory = os.path.join('.', os.path.split(txtpath)[1]).replace("\\", '/')
 
     ngp = NgraphWriter(mode)
@@ -256,7 +261,6 @@ def write_polarization_graph(data):
     """
     偏向角-開放端電圧、偏向角-短絡電流のグラフを書き出す
     """
-
     # 分割
     angles, voltages, currents = data
 
@@ -300,6 +304,7 @@ def write_polarization_graph(data):
         write_ngp_data(
             angles,
             voltages,
+            pred_y[0],
             sv_params,
             os.path.join(DEST_PATH, 'Voc_phi.txt'),
             'v')
@@ -326,6 +331,7 @@ def write_polarization_graph(data):
         write_ngp_data(
             angles,
             currents,
+            pred_y[1],
             sa_params,
             os.path.join(DEST_PATH, 'Isc_phi.txt'),
             'i')
