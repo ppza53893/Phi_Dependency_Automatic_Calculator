@@ -6,15 +6,21 @@ import datetime
 import glob
 import msvcrt
 import os
+import shutil
 import sys
 import subprocess
+_ = subprocess.run("cls", shell=True)
 _ = subprocess.run("title Polarization Automatic Tool", shell=True)
 if not __debug__:
     print("デバッグモード ON")
-print("Polarization Automatic Tool ver 1.5 (2020/12/05)")
-print("・使用方法は「How to use.txt」を見てください。")
-print("・初回起動は少しロードが遅くなります。")
-print("・ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。\n")
+CMD_TERMINAL_LENGTH = shutil.get_terminal_size().columns
+print('#'*CMD_TERMINAL_LENGTH)
+print("Polarization Automatic Tool ver 1.52 (Update : 2020/12/05)")
+print(">>> 使用方法は「How to use.txt」を見てください。")
+print(">>> 初回起動は少しロードが遅くなります。")
+print(">>> ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。")
+print('#'*CMD_TERMINAL_LENGTH)
+sys.stdout.write("\n")
 
 # pylint: disable=wrong-import-position
 from tkinter import Tk
@@ -35,10 +41,10 @@ from lib.ngraph import NgraphWriter
 DIR_SELECTED = False
 INPUT_PATH = None
 DEST_PATH = None
-DAT_READ_START = 13
 
 
 ##################################### 変更場所 #####################################
+DAT_READ_START = 13 # データ(.DAT)の読み込み開始位置
 ANGLE_ADD = 22.5 # 回転角のステップを変える場合はここを変える
 ###################################################################################
 
@@ -65,8 +71,8 @@ def browse() -> str:
         root.withdraw()
         INPUT_PATH = askdirectory(initialdir=ask_dir)
         if INPUT_PATH == "":
-            print("キャンセルされました。")
-            sys.exit(1)
+            print(">>> キャンセルされました。")
+            sys.exit(0)
         DIR_SELECTED = True
 
     return INPUT_PATH
@@ -83,7 +89,7 @@ def get_curtime(for_folder=True) -> str:
     return time_ymd
 
 
-def read_path():
+def write_pathlog():
     """
     読み込んだフォルダパスを書き込み(次回以降の参照先にするため)
     """
@@ -198,6 +204,7 @@ def calc_y_scale(y, yp):
     ymax = float(ymax)
     npow = abs(int(npow))
 
+    # 軸幅の設定
     if ymax < 1.5:
         step = 0.5*10**npow
     elif ymax < 3.5:
@@ -216,6 +223,7 @@ def calc_y_scale(y, yp):
             i += 1
         return ret if value >=0 else -ret
 
+    # 上下の高さを統一する
     y_min = rangeset(min(min(y), min(yp)))
     y_max = rangeset(max(max(yp), max(yp)))
     y_min = max(abs(y_max), abs(y_min)) * abs(y_min) / y_min
@@ -375,11 +383,8 @@ def main():
     データを作成(フォーマットは林本さんの形式)
     """
     global DEST_PATH # pylint: disable=global-statement
-
     DEST_PATH = os.path.join(browse(), get_curtime()+'_result')
-
-    print(browse())
-    os.makedirs(DEST_PATH, exist_ok=True)
+    print('>>> パス : '+browse())
 
     error_log = []
     nums = {}
@@ -398,20 +403,18 @@ def main():
                 error_log.append(str(e) + '\n')
                 error_log.append(f"Invalid file name : {os.path.abspath(_path)}\n")
                 continue
-
         nums[_path] = num
-
     if len(nums) == 0:
-        error_log.append(".DAT file could not be loaded.")
+        error_log.append("file could not be loaded.")
+        print(">>> エラー : 有効なファイルがありませんでした。\n>>> ほかのデータを参照しますか? (y/n):", end='')
+        return
+
+    nums = sorted(nums.items(), key=lambda x: x[1])
+    os.makedirs(DEST_PATH, exist_ok=True)
     if len(error_log) > 0:
         output_file = os.path.join(DEST_PATH, 'Error.txt')
         with open(output_file, 'w', encoding='utf-8') as f:
             f.writelines(error_log)
-            if len(nums) == 0:
-                print("エラー:有効なファイルがありませんでした。\nほかのデータを参照しますか? (y/n):", end='')
-                return
-
-    nums = sorted(nums.items(), key=lambda x: x[1])
 
     data = []
     polar_angle = 0.
@@ -426,15 +429,13 @@ def main():
         polarizations[0] += [polar_angle]
         polarizations[1] += [v_oc]
         polarizations[2] += [-i_sc]
-
         polar_angle += ANGLE_ADD
-
     write_polarization_graph(polarizations)
     write_to_excel(data)
-    read_path()
+    write_pathlog()
     if not __debug__:
         sys.exit(0)
-    print("完了!\n続行しますか? (y/n):", end='')
+    print(">>> 完了!\n>>> 続行しますか? (y/n):", end='')
 
     # ファイルを開く
     if os.name == 'nt':
@@ -470,4 +471,7 @@ if __name__=='__main__':
             reset()
             main()
         else:
-            sys.stdout.write("\n無効なキーです。「y」か「n」を押してください:")
+            print_write = "\n>>> 無効なキーです。「y」か「n」を押してください:"
+            if key == 0x1B:
+                sys.stdout.write('0')
+            sys.stdout.write(print_write)
