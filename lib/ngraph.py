@@ -113,23 +113,28 @@ class NgraphWriter:
     """
     Ngraphデータの更新をしたり書き出したりする。
     """
-    def __init__(self, mode='v'):
+    def __init__(self, mode='v', filepath=None):
         self.data = None
-        if mode=='v':
-            _json = 'base_voc.json'
-        elif mode=='i':
-            _json = 'base_isc.json'
+        if filepath is None:
+            if mode=='v':
+                _json = 'base_voc.json'
+            elif mode=='i':
+                _json = 'base_isc.json'
+            else:
+                raise ValueError('Invalid mode : '+mode)
+            self.current_path = os.path.join(
+                os.path.abspath(os.path.dirname(__file__)),
+                'json', _json)
         else:
-            raise ValueError('Invalid mode : '+mode)
-        self.current_path = os.path.abspath(os.path.dirname(__file__))
-        self.read(_json)
+            self.current_path = filepath
+        self.read()
         self.writetext = []
 
-    def read(self, target):
+    def read(self):
         """
         データを読み込む。初めにされるのでこの関数は指定しなくてもよい。
         """
-        with open(os.path.join(self.current_path, target), 'r') as f:
+        with open(self.current_path, 'r') as f:
             self.data = f.read()
             self.data = json.loads(self.data)['data']
 

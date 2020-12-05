@@ -28,7 +28,7 @@ from scipy import optimize as opt
 from sklearn import linear_model
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from ngraph import NgraphWriter
+from lib.ngraph import NgraphWriter
 # pylint: enable=wrong-import-position
 
 
