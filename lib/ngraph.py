@@ -20,7 +20,6 @@ class NgraphParser:
     """
     def __init__(self, encoding=None):
         self.encoding = 'shift_jis' if not encoding else encoding
-        self.fit_group = False
         self.groups = []
 
     def convert(self, fpath, dest):
@@ -86,7 +85,6 @@ class NgraphParser:
         options = {}
         for _, line in enumerate(lines):
             if line =='\n' or '::' not in line:
-                self.fit_group = '::' in line
                 break
 
             line = line.lstrip()
