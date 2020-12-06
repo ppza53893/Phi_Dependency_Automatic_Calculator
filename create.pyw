@@ -458,7 +458,7 @@ def main():
                     os.path.splitext(os.path.split(_path)[1])[0])
             except ValueError as e:
                 error_log.append(str(e) + '\n')
-                error_log.append(f"Invalid file name : {os.path.abspath(_path)}\n")
+                error_log.append(f"Invalid file name : {CWD}\n")
                 continue
         nums[_path] = num
     if len(nums) == 0:
