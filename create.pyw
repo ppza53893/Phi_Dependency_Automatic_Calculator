@@ -9,18 +9,42 @@ import os
 import shutil
 import sys
 import subprocess
-_ = subprocess.run("cls", shell=True)
-_ = subprocess.run("title Polarization Automatic Tool", shell=True)
+
+
+def call_cmd(command:str, **kwargs):
+    """
+    cmdコマンドを実行
+    """
+    if isinstance(command, (str, list, tuple)):
+        if 'shell' not in kwargs:
+            kwargs.update({'shell':True})
+        _ = subprocess.run(command, **kwargs)
+    else:
+        print(
+            ">>> 有効なコマンドではありません : " + str(command))
+call_cmd("cls")
+call_cmd("color 0A")
+call_cmd("title Polarization Automatic Tool")
+
+# コマンドライン幅
+CMD_TERMINAL_LENGTH = shutil.get_terminal_size().columns
+# カレントディレクトリ
+CWD = os.path.dirname(os.path.abspath(__file__))
+# ngraph.pyの参照用
+sys.path.append(CWD)
+
+
+# debug mode(testing)
 if not __debug__:
     print("デバッグモード ON")
-CMD_TERMINAL_LENGTH = shutil.get_terminal_size().columns
 print('#'*CMD_TERMINAL_LENGTH)
-print("Polarization Automatic Tool ver 1.52 (Update : 2020/12/05)")
+print("Polarization Automatic Tool ver 1.53 (Update : 2020/12/06)")
 print(">>> 使用方法は「How to use.txt」を見てください。")
 print(">>> 初回起動は少しロードが遅くなります。")
 print(">>> ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。")
 print('#'*CMD_TERMINAL_LENGTH)
 sys.stdout.write("\n")
+
 
 # pylint: disable=wrong-import-position
 from tkinter import Tk
@@ -33,18 +57,22 @@ import tqdm
 from scipy import optimize as opt
 from sklearn import linear_model
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from lib.ngraph import NgraphWriter
 # pylint: enable=wrong-import-position
 
 
+# 下3つは内部で変わるので触らないこと。
+# ブラウズ用 すでにフォルダは選択したか?
 DIR_SELECTED = False
+# ブラウズ後のディレクトリパス
 INPUT_PATH = None
+# データ出力パス
 DEST_PATH = None
 
 
 ##################################### 変更場所 #####################################
 DAT_READ_START = 13 # データ(.DAT)の読み込み開始位置
+                    # 初めの値は入れないので、入れたい場合は12にする
 ANGLE_ADD = 22.5 # 回転角のステップを変える場合はここを変える
 ###################################################################################
 
@@ -58,15 +86,17 @@ def browse() -> str:
     global DIR_SELECTED # pylint: disable=global-statement
 
     if not DIR_SELECTED:
-        abs_path = os.path.abspath(os.path.dirname(__file__))
-        find_path = os.path.join(abs_path, '.record')
+        # 前回実行したログはあるか?
+        find_path = os.path.join(CWD, '.record')
         if os.path.exists(find_path):
             with open(find_path, 'r') as f:
                 ask_dir = f.readline().rstrip()
                 if not os.path.exists(ask_dir):
-                    ask_dir = abs_path
+                    ask_dir = CWD
         else:
-            ask_dir = abs_path
+            ask_dir = CWD
+
+        # ブラウジング
         root = Tk()
         root.withdraw()
         INPUT_PATH = askdirectory(initialdir=ask_dir)
@@ -94,24 +124,10 @@ def write_pathlog():
     読み込んだフォルダパスを書き込み(次回以降の参照先にするため)
     """
     record_file = '.record'
-    file_path = os.path.join(
-        os.path.abspath(os.path.dirname(__file__)), record_file)
+    file_path = os.path.join(CWD, record_file)
     with open(file_path, 'w') as f:
         f.write(INPUT_PATH + '\n')
         f.write('Last used:'+ get_curtime(False))
-
-
-def calc_linears(x, y) -> list:
-    """
-    線形回帰
-    """
-
-    model = linear_model.LinearRegression()
-    x = np.array(x, dtype=np.float32).reshape(-1,1)
-    y = np.array(y, dtype=np.float32).reshape(-1,1)
-    model.fit(x, y)
-
-    return model, model.score(x, y)
 
 
 def dat_separate(lines):
@@ -228,9 +244,28 @@ def calc_y_scale(y, yp):
     y_max = rangeset(max(max(yp), max(yp)))
     y_min = max(abs(y_max), abs(y_min)) * abs(y_min) / y_min
     y_max = max(abs(y_max), abs(y_min)) * abs(y_max) / y_max
+    if y_max < 0:
+        y_max = 0.
     if not __debug__:
         print("(min, max, step) = ", y_min, y_max, step)
     return y_min, y_max, step
+
+
+def correct_x(x):
+    """
+    x軸の最大値を調節
+    """
+    if abs(x) % 45 != 0:
+        ret = ANGLE_ADD*2
+        i = 2
+        while abs(x) > ret:
+            ret = ANGLE_ADD*2*i
+            i += 1
+        x_max = ret if x >=0 else -ret
+    else:
+        x_max = x
+
+    return x_max
 
 
 def write_ngp_data(angles, y_data, y_pred, s_params, txtpath, mode):
@@ -245,23 +280,29 @@ def write_ngp_data(angles, y_data, y_pred, s_params, txtpath, mode):
     directory = os.path.join('.', os.path.split(txtpath)[1]).replace("\\", '/')
 
     ngp = NgraphWriter(mode)
+    ##################################### 変更場所 #####################################
+    # ([])内の要素を追加できます。
+    # 各リストの1番目はクラス番号(何番目のクラスか)、2番目はクラス名(ngpファイルの
+    # 「new ...」)、 3番目はクラス内の変数名、4番目は代入する変数名です。
+    # 文字を代入する場合は"''"のようにアポストロフィを入れないといけない場合と、
+    # 入れなくても""か''でいいようなケースがあるので注意してください。
+    # 間違っていると生成されたngpファイルを開いたらエラーが出ます。
     ngp.write([
         [0,'axis name:fX1', 'min', angles[0]],
-        [0,'axis name:fX1', 'max', angles[-1]],
+        [0,'axis name:fX1', 'max', correct_x(angles[-1])],
         [0,'axis name:fX1', 'inc', ANGLE_ADD*2],
         [1,'axis name:fY1', 'min', y_scales[0]],
         [1,'axis name:fY1', 'max', y_scales[1]],
         [1,'axis name:fY1', 'inc', y_scales[2]],
         [5, 'file', 'file', f"'{directory}'"],
-        ##################################### 変更場所 #####################################
         # 理論式を変える場合はここも変える
         # 書き方はngpファイル参照(fit::equation)
         [6,'fit','equation',
             f"'{s_params[0]}*"\
                 f"SIN(PI*(X/90+{s_params[1]}/180))+{s_params[2]}'"],
-        ###################################################################################
         [7, 'file', 'file', f"'{directory}'"],
         ])
+    ###################################################################################
     ngp.out(txtpath.replace('.txt', '.ngp'))
 
 
@@ -278,7 +319,9 @@ def write_polarization_graph(data):
     sa_params = opt.curve_fit(formula, angles, currents)[0]
 
     # 曲線を書く用のx軸データ
-    polar_angles = np.arange(angles[0], angles[-1], step=2)
+    graph_xlim = correct_x(angles[-1])+(ANGLE_ADD*2)
+    polar_angles = np.arange(
+        angles[0], graph_xlim, step=2)
 
     # 曲線用のデータを作成
     pred_y = [[],[]]
@@ -293,19 +336,26 @@ def write_polarization_graph(data):
         """
         偏向角-開放端電圧特性
         """
+        y_scales = calc_y_scale(voltages, pred_y[0])
         graph_l.plot(angles, voltages, linestyle='None', marker='o', color='green')
         graph_l.plot(polar_angles, pred_y[0],
             label=f'Voc={sv_params[0]:.1f}'\
-                f'sin(2φ{sv_params[1]*3.1415926535/180:+.1f}){sv_params[2]:+.1f}')
+                f'sin(2φ{sv_params[1]*3.1415926535/180:+.1f}){sv_params[2]:+.1f}',
+            color='black')
         if not __debug__:
             print('voc:',sv_params)
         ##################################### 変更場所 #####################################
         # 特性グラフの軸の名前
         graph_l.set_title('Voc-φ')
         graph_l.set_xlabel('Angle of light polarization φ (deg)')
-        ###################################################################################
         graph_l.set_ylabel('Open circuit voltage (V)')
+        ###################################################################################
+        graph_l.set_ylim(y_scales[:2])
+        graph_l.set_yticks(
+            np.arange(y_scales[0], y_scales[1]+y_scales[2], y_scales[2]))
         graph_l.set_xlim([angles[0], angles[-1]])
+        graph_l.set_xticks(
+            np.arange(angles[0], graph_xlim, ANGLE_ADD*2))
         graph_l.legend(bbox_to_anchor=(1, 1), loc='upper right', borderaxespad=0)
 
         # ngraph用のデータを書き出す
@@ -321,19 +371,26 @@ def write_polarization_graph(data):
         """
         偏向角-短絡電流特性
         """
+        y_scales = calc_y_scale(currents, pred_y[1])
         graph_r.plot(angles, currents, linestyle='None', marker='o', color='blue')
         graph_r.plot(polar_angles, pred_y[1],
             label=f'Isc={sa_params[0]:.1f}'\
-                f'sin(2φ{sa_params[1]*3.1415926535/180:+.1f}){sa_params[2]:+.1f}')
+                f'sin(2φ{sa_params[1]*3.1415926535/180:+.1f}){sa_params[2]:+.1f}',
+            color='black')
         if not __debug__:
             print('isc:',sa_params)
         ##################################### 変更場所 #####################################
         # 特性グラフの軸の名前
         graph_r.set_title('Isc-φ')
         graph_r.set_xlabel('Angle of light polarization φ (deg)')
-        ###################################################################################
         graph_r.set_ylabel('Short circuit current (pA)')
+        ###################################################################################
+        graph_r.set_ylim(y_scales[:2])
+        graph_r.set_yticks(
+            np.arange(y_scales[0], y_scales[1]+y_scales[2], y_scales[2]))
         graph_r.set_xlim([angles[0], angles[-1]])
+        graph_r.set_xticks(
+            np.arange(angles[0], graph_xlim, ANGLE_ADD*2))
         graph_r.legend(bbox_to_anchor=(1, 1), loc='upper right', borderaxespad=0)
 
         write_ngp_data(
@@ -441,7 +498,7 @@ def main():
     if os.name == 'nt':
         DEST_PATH = DEST_PATH.replace('/', '\\')
         if __debug__:
-            _ = subprocess.run(f"explorer {DEST_PATH}", shell=True)
+            call_cmd(f"explorer {DEST_PATH}")
 
 
 def reset():
