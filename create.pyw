@@ -3,7 +3,6 @@
 """
 # pylint: disable=W1510
 import datetime
-import glob
 import msvcrt
 import os
 import shutil
@@ -38,7 +37,7 @@ sys.path.append(CWD)
 if not __debug__:
     print("デバッグモード ON")
 print('#'*CMD_TERMINAL_LENGTH)
-print("Polarization Automatic Tool ver 1.53 (Update : 2020/12/06)")
+print("Polarization Automatic Tool ver 1.54 (Update : 2020/12/14)")
 print(">>> 使用方法は「How to use.txt」を見てください。")
 print(">>> 初回起動は少しロードが遅くなります。")
 print(">>> ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。")
@@ -47,6 +46,8 @@ sys.stdout.write("\n")
 
 
 # pylint: disable=wrong-import-position
+from glob import iglob
+from glob import escape as escape_chr
 from tkinter import Tk
 from tkinter.filedialog import askdirectory
 
@@ -61,14 +62,15 @@ from lib.ngraph import NgraphWriter
 # pylint: enable=wrong-import-position
 
 
-# 下3つは内部で変わるので触らないこと。
+# 下4つは内部で変わるので触らないこと。
 # ブラウズ用 すでにフォルダは選択したか?
 DIR_SELECTED = False
 # ブラウズ後のディレクトリパス
 INPUT_PATH = None
 # データ出力パス
 DEST_PATH = None
-
+# Ngrapghモード
+NGP_MODE = None
 
 ##################################### 変更場所 #####################################
 DAT_READ_START = 13 # データ(.DAT)の読み込み開始位置
@@ -78,7 +80,7 @@ ANGLE_ADD = 22.5 # 回転角のステップを変える場合はここを変え�
 
 
 # pylint: disable=invalid-name
-def browse() -> str:
+def browse():
     """
     フォルダの参照
     """
@@ -104,8 +106,6 @@ def browse() -> str:
             print(">>> キャンセルされました。")
             sys.exit(0)
         DIR_SELECTED = True
-
-    return INPUT_PATH
 
 
 def get_curtime(for_folder=True) -> str:
@@ -268,7 +268,15 @@ def correct_x(x):
     return x_max
 
 
-def write_ngp_data(angles, y_data, y_pred, s_params, txtpath, mode):
+def update_ngp_mode(mode):
+    """
+    NgraphWriterのモードを更新
+    """
+    global NGP_MODE # pylint: disable=global-statement
+    NGP_MODE = mode
+
+
+def write_ngp_data(angles, y_data, y_pred, s_params, txtpath):
     """
     Ngraphデータを生成
     """
@@ -279,7 +287,7 @@ def write_ngp_data(angles, y_data, y_pred, s_params, txtpath, mode):
     y_scales = calc_y_scale(y_data, y_pred)
     directory = os.path.join('.', os.path.split(txtpath)[1]).replace("\\", '/')
 
-    ngp = NgraphWriter(mode)
+    ngp = NgraphWriter(NGP_MODE)
     ##################################### 変更場所 #####################################
     # ([])内の要素を追加できます。
     # 各リストの1番目はクラス番号(何番目のクラスか)、2番目はクラス名(ngpファイルの
@@ -359,13 +367,13 @@ def write_polarization_graph(data):
         graph_l.legend(bbox_to_anchor=(1, 1), loc='upper right', borderaxespad=0)
 
         # ngraph用のデータを書き出す
+        update_ngp_mode('v')
         write_ngp_data(
             angles,
             voltages,
             pred_y[0],
             sv_params,
-            os.path.join(DEST_PATH, 'Voc_phi.txt'),
-            'v')
+            os.path.join(DEST_PATH, 'Voc_phi.txt'))
 
     def plot_current():
         """
@@ -393,13 +401,13 @@ def write_polarization_graph(data):
             np.arange(angles[0], graph_xlim, ANGLE_ADD*2))
         graph_r.legend(bbox_to_anchor=(1, 1), loc='upper right', borderaxespad=0)
 
+        update_ngp_mode('i')
         write_ngp_data(
             angles,
             currents,
             pred_y[1],
             sa_params,
-            os.path.join(DEST_PATH, 'Isc_phi.txt'),
-            'i')
+            os.path.join(DEST_PATH, 'Isc_phi.txt'))
 
     plot_voltage()
     plot_current()
@@ -440,12 +448,13 @@ def main():
     データを作成(フォーマットは林本さんの形式)
     """
     global DEST_PATH # pylint: disable=global-statement
-    DEST_PATH = os.path.join(browse(), get_curtime()+'_result')
-    print('>>> パス : '+browse())
+    browse() # 参照(INPUT_PATHを更新)
+    DEST_PATH = os.path.join(INPUT_PATH, get_curtime()+'_result')
+    print('>>> パス : ' + INPUT_PATH)
 
     error_log = []
     nums = {}
-    for _path in glob.glob(browse()+'/*'):
+    for _path in iglob(escape_chr(INPUT_PATH)+'/*'):
         if not os.path.isfile(_path):
             continue
         try:
@@ -491,6 +500,7 @@ def main():
     write_to_excel(data)
     write_pathlog()
     if not __debug__:
+        shutil.rmtree(DEST_PATH)
         sys.exit(0)
     print(">>> 完了!\n>>> 続行しますか? (y/n):", end='')
 
