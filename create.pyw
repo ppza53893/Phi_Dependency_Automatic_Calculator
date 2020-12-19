@@ -3,6 +3,7 @@
 """
 # pylint: disable=W1510
 import datetime
+import math
 import msvcrt
 import os
 import shutil
@@ -19,8 +20,7 @@ def call_cmd(command:str, **kwargs):
             kwargs.update({'shell':True})
         _ = subprocess.run(command, **kwargs)
     else:
-        print(
-            ">>> 有効なコマンドではありません : " + str(command))
+        print(">>> 有効なコマンドではありません : " + str(command))
 call_cmd("cls")
 call_cmd("color 0A")
 call_cmd("title Polarization Automatic Tool")
@@ -33,11 +33,15 @@ CWD = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(CWD)
 
 
-# debug mode(testing)
-if not __debug__:
+# デバッグモード(内部テスト用)
+# 変更禁止
+IS_DEBUG = not __debug__
+if IS_DEBUG:
     print("デバッグモード ON")
+
+# はじめの画面
 print('#'*CMD_TERMINAL_LENGTH)
-print("Polarization Automatic Tool ver 1.54 (Update : 2020/12/14)")
+print("Polarization Automatic Tool ver 1.57 (Update : 2020/12/19)")
 print(">>> 使用方法は「How to use.txt」を見てください。")
 print(">>> 初回起動は少しロードが遅くなります。")
 print(">>> ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。")
@@ -206,31 +210,44 @@ def formula(x, a, b, c):
     ###################################################################################
 
 
-def calc_y_scale(y, yp):
+def calc_y_bars(y, yp):
     """
     y軸のスケール幅を設定する
-    参考 : https://imagingsolution.net/program/autocalcgraphstep/
     """
-    _y = max(
+
+    act_bool = max(max(y), max(yp)) < 0 or min(min(y), min(yp)) > 0
+    yma = max(
             abs(max(y)),
             abs(min(y)),
             abs(max(yp)),
             abs(min(yp)))
-    ymax, npow = f"{_y:e}".split("e")
-    ymax = float(ymax)
-    npow = abs(int(npow))
+    ymm = min(
+            abs(max(y)),
+            abs(min(y)),
+            abs(max(yp)),
+            abs(min(yp)))
+    if act_bool:
+        # 基点を0にする
+        ref_gap = (yma+ymm)/2
+        yma -= ref_gap
+        ymm -= ref_gap
+    else:
+        ref_gap = 0.
 
+    npow = int(math.log10(yma))
     # 軸幅の設定
-    if ymax < 1.5:
+    if yma/10**npow < 1.5:
         step = 0.5*10**npow
-    elif ymax < 3.5:
+    elif yma/10**npow < 3.5:
         step = 1.0*10**npow
-    elif ymax <= 5.0:
+    elif yma/10**npow <= 5.0:
         step = 2.0*10**npow
     else:
         step = 5.0*10**npow
 
     def rangeset(value):
+        if value == 0:
+            return step
         n = abs(value)
         ret = step
         i = 2
@@ -239,15 +256,33 @@ def calc_y_scale(y, yp):
             i += 1
         return ret if value >=0 else -ret
 
-    # 上下の高さを統一する
-    y_min = rangeset(min(min(y), min(yp)))
-    y_max = rangeset(max(max(yp), max(yp)))
-    y_min = max(abs(y_max), abs(y_min)) * abs(y_min) / y_min
-    y_max = max(abs(y_max), abs(y_min)) * abs(y_max) / y_max
-    if y_max < 0:
-        y_max = 0.
-    if not __debug__:
-        print("(min, max, step) = ", y_min, y_max, step)
+    if act_bool:
+        # 基点をもとの場所に戻す
+        fix_gap = rangeset(ref_gap)
+        if max(max(y), max(yp)) < 0:
+            sgn = -1
+        elif min(min(y), min(yp)) > 0:
+            sgn = 1
+        y_min = rangeset(ymm) + fix_gap * sgn
+        y_max = rangeset(yma) + fix_gap * sgn
+        # さらに補正
+        while (
+            y_min > min(min(y), min(yp))
+            or y_max < max(max(y), max(yp))
+        ):
+            y_min -= step
+            y_max += step
+    else:
+        y_min = rangeset(min(min(y), min(yp)))
+        y_max = rangeset(max(max(yp), max(yp)))
+        # 上下の高さを統一する
+        y_min = max(abs(y_max), abs(y_min)) * abs(y_min) / y_min
+        y_max = max(abs(y_max), abs(y_min)) * abs(y_max) / y_max
+
+    if int(abs((y_max-y_min)/step)) == 2:
+        # 軸数が2つの場合は4つにする
+        step /= 2
+
     return y_min, y_max, step
 
 
@@ -284,7 +319,7 @@ def write_ngp_data(angles, y_data, y_pred, s_params, txtpath):
         f.writelines([
             f'{angles[i]}\t{y_data[i]}\n' for i in range(len(angles))])
 
-    y_scales = calc_y_scale(y_data, y_pred)
+    y_scales = calc_y_bars(y_data, y_pred)
     directory = os.path.join('.', os.path.split(txtpath)[1]).replace("\\", '/')
 
     ngp = NgraphWriter(NGP_MODE)
@@ -344,13 +379,13 @@ def write_polarization_graph(data):
         """
         偏向角-開放端電圧特性
         """
-        y_scales = calc_y_scale(voltages, pred_y[0])
+        y_scales = calc_y_bars(voltages, pred_y[0])
         graph_l.plot(angles, voltages, linestyle='None', marker='o', color='green')
         graph_l.plot(polar_angles, pred_y[0],
             label=f'Voc={sv_params[0]:.1f}'\
                 f'sin(2φ{sv_params[1]*3.1415926535/180:+.1f}){sv_params[2]:+.1f}',
             color='black')
-        if not __debug__:
+        if IS_DEBUG:
             print('voc:',sv_params)
         ##################################### 変更場所 #####################################
         # 特性グラフの軸の名前
@@ -379,13 +414,13 @@ def write_polarization_graph(data):
         """
         偏向角-短絡電流特性
         """
-        y_scales = calc_y_scale(currents, pred_y[1])
+        y_scales = calc_y_bars(currents, pred_y[1])
         graph_r.plot(angles, currents, linestyle='None', marker='o', color='blue')
         graph_r.plot(polar_angles, pred_y[1],
             label=f'Isc={sa_params[0]:.1f}'\
                 f'sin(2φ{sa_params[1]*3.1415926535/180:+.1f}){sa_params[2]:+.1f}',
             color='black')
-        if not __debug__:
+        if IS_DEBUG:
             print('isc:',sa_params)
         ##################################### 変更場所 #####################################
         # 特性グラフの軸の名前
@@ -471,7 +506,6 @@ def main():
                 continue
         nums[_path] = num
     if len(nums) == 0:
-        error_log.append("file could not be loaded.")
         print(">>> エラー : 有効なファイルがありませんでした。\n>>> ほかのデータを参照しますか? (y/n):", end='')
         return
 
@@ -491,15 +525,15 @@ def main():
                 dat_separate(f.readlines()[DAT_READ_START:]),
                 os.path.split(_nums[0])[-1])
 
-        data += [[_nums[1], polar_angle, v_oc, -i_sc, cond]]
+        data += [[_nums[1], polar_angle, v_oc, i_sc, cond]]
         polarizations[0] += [polar_angle]
         polarizations[1] += [v_oc]
-        polarizations[2] += [-i_sc]
+        polarizations[2] += [i_sc]
         polar_angle += ANGLE_ADD
     write_polarization_graph(polarizations)
     write_to_excel(data)
     write_pathlog()
-    if not __debug__:
+    if IS_DEBUG:
         shutil.rmtree(DEST_PATH)
         sys.exit(0)
     print(">>> 完了!\n>>> 続行しますか? (y/n):", end='')
