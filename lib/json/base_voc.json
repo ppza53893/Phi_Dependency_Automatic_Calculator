@@ -434,7 +434,7 @@
         "clip": true,
         "redraw_flag": true,
         "text": "'Angle of light polarization %f{HelvI}\u03c6%f{Helv}@ (deg)'",
-        "x": 3400,
+        "x": 2600,
         "y": 24600,
         "pt": 3000,
         "font": "'Helvetica'",
