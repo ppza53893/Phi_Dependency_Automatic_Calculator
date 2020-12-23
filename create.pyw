@@ -41,7 +41,7 @@ if IS_DEBUG:
 
 # はじめの画面
 print('#'*CMD_TERMINAL_LENGTH)
-print("Polarization Automatic Tool ver 1.57 (Update : 2020/12/19)")
+print("Polarization Automatic Tool ver 1.58 (Update : 2020/12/19)")
 print(">>> 使用方法は「How to use.txt」を見てください。")
 print(">>> 初回起動は少しロードが遅くなります。")
 print(">>> ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。")
@@ -75,6 +75,7 @@ INPUT_PATH = None
 DEST_PATH = None
 # Ngrapghモード
 NGP_MODE = None
+
 
 ##################################### 変更場所 #####################################
 DAT_READ_START = 13 # データ(.DAT)の読み込み開始位置
@@ -210,7 +211,7 @@ def formula(x, a, b, c):
     ###################################################################################
 
 
-def calc_y_bars(y, yp):
+def calc_y_bars(y, yp, show_verbose=False):
     """
     y軸のスケール幅を設定する
     """
@@ -261,8 +262,13 @@ def calc_y_bars(y, yp):
         fix_gap = rangeset(ref_gap)
         if max(max(y), max(yp)) < 0:
             sgn = -1
-        elif min(min(y), min(yp)) > 0:
+        else:
             sgn = 1
+        if show_verbose:
+            msg_s = ['開放端電圧' if NGP_MODE == 'v' else '短絡電流',
+                '負' if sgn == -1 else '正']
+            print(f'>>> [INFO] {msg_s[0]}のデータがすべて{msg_s[1]}に偏っています。'\
+                '設置した基板の向きはあっていますか?')
         y_min = rangeset(ymm) + fix_gap * sgn
         y_max = rangeset(yma) + fix_gap * sgn
         # さらに補正
@@ -319,7 +325,7 @@ def write_ngp_data(angles, y_data, y_pred, s_params, txtpath):
         f.writelines([
             f'{angles[i]}\t{y_data[i]}\n' for i in range(len(angles))])
 
-    y_scales = calc_y_bars(y_data, y_pred)
+    y_scales = calc_y_bars(y_data, y_pred, show_verbose=True)
     directory = os.path.join('.', os.path.split(txtpath)[1]).replace("\\", '/')
 
     ngp = NgraphWriter(NGP_MODE)
@@ -502,11 +508,13 @@ def main():
                     os.path.splitext(os.path.split(_path)[1])[0])
             except ValueError as e:
                 error_log.append(str(e) + '\n')
-                error_log.append(f"Invalid file name : {CWD}\n")
+                error_log.append(f"Invalid file name : {_path}\n")
+                print(f'>>> [ERROR] ファイルを読み込めません({os.path.split(_path)[1]})'\
+                    '。ファイル名を確認してください。')
                 continue
         nums[_path] = num
     if len(nums) == 0:
-        print(">>> エラー : 有効なファイルがありませんでした。\n>>> ほかのデータを参照しますか? (y/n):", end='')
+        print(">>> [ERROR] 有効なファイルがありませんでした。\n>>> ほかのデータを参照しますか? (y/n):", end='')
         return
 
     nums = sorted(nums.items(), key=lambda x: x[1])
