@@ -483,11 +483,19 @@ def write_to_excel(data):
 
 
 def datread_ignorezchk(readfile) -> list:
+    """
+    ゼロチェックのデータ以降を読み込む
+    """
+    datacount = 0
     for i, string in enumerate(readfile):
         if string[0] == '#':
             continue
-        elif string[:2] == '0,':
+        else:
+            datacount += 1
+        if string[:2] == '0,' and datacount < 2:
             return readfile[i+1:]
+
+    return readfile
 
 
 def main():
