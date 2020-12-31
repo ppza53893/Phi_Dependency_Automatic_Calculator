@@ -41,7 +41,7 @@ if IS_DEBUG:
 
 # はじめの画面
 print('#'*CMD_TERMINAL_LENGTH)
-print("Polarization Automatic Tool ver 1.58 (Update : 2020/12/19)")
+print("Polarization Automatic Tool ver 1.59 (Update : 2021/01/01)")
 print(">>> 使用方法は「How to use.txt」を見てください。")
 print(">>> 初回起動は少しロードが遅くなります。")
 print(">>> ブラウズ画面やプログレスバーが表示されないときは何かのキーを押してください。")
@@ -78,8 +78,6 @@ NGP_MODE = None
 
 
 ##################################### 変更場所 #####################################
-DAT_READ_START = 13 # データ(.DAT)の読み込み開始位置
-                    # 初めの値は入れないので、入れたい場合は12にする
 ANGLE_ADD = 22.5 # 回転角のステップを変える場合はここを変える
 ###################################################################################
 
@@ -484,6 +482,14 @@ def write_to_excel(data):
             worksheet.column_dimensions[cell].width = len(columns[i])+1
 
 
+def datread_ignorezchk(readfile) -> list:
+    for i, string in enumerate(readfile):
+        if string[0] == '#':
+            continue
+        elif string[:2] == '0,':
+            return readfile[i+1:]
+
+
 def main():
     """
     データを作成(フォーマットは林本さんの形式)
@@ -530,7 +536,8 @@ def main():
     for _nums in tqdm.tqdm(nums):
         with open(_nums[0], 'r') as f:
             v_oc, i_sc, cond = write_linear_graph(
-                dat_separate(f.readlines()[DAT_READ_START:]),
+                dat_separate(
+                    datread_ignorezchk(f.readlines())),
                 os.path.split(_nums[0])[-1])
 
         data += [[_nums[1], polar_angle, v_oc, i_sc, cond]]
