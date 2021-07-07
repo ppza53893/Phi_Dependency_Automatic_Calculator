@@ -119,7 +119,7 @@ class NgraphWriter:
             elif mode=='i':
                 _json = 'base_isc.json'
             else:
-                raise ValueError('Invalid mode : '+mode)
+                raise ValueError('>>> [ERROR] モードが不正です : '+mode)
             self.current_path = os.path.join(
                 os.path.abspath(os.path.dirname(__file__)),
                 'json', _json)

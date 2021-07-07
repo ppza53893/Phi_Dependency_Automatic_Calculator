@@ -414,7 +414,7 @@
         "clip": true,
         "redraw_flag": true,
         "text": "'Open circuit voltage %f{HelvI}V%f{Helv}_oc@ (V)'",
-        "x": 1200,
+        "x": 900,
         "y": 21200,
         "pt": 3000,
         "font": "'Helvetica'",

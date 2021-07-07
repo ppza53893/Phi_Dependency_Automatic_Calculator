@@ -414,7 +414,7 @@
         "clip": true,
         "redraw_flag": true,
         "text": "'Short circuit current %f{HelvI}I%f{Helv}_sc@ (pA)'",
-        "x": 1200,
+        "x": 900,
         "y": 21200,
         "pt": 3000,
         "font": "'Helvetica'",
