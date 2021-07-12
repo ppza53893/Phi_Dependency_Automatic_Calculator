@@ -1,0 +1,8 @@
+Voc fitting
+	Amplitude :    96.0831 V
+	Phase     :    3.90075 deg
+	Intercept :    4.22882 V
+Isc fitting
+	Amplitude :   -173.053 pA
+	Phase     :    3.50777 deg
+	Intercept :   -15.3624 pA
